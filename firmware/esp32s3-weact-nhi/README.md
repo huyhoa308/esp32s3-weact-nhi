@@ -1,30 +1,41 @@
 # Board `esp32s3-weact-nhi` – Robot Nhi AI để bàn
 
-Robot trợ lý AI để bàn: màn hình TFT hiển thị đôi mắt RoboEyes + đầu quay bằng 2 servo
+Robot trợ lý AI để bàn: màn hình hiển thị đôi mắt RoboEyes + đầu quay bằng 2 servo
 (PAN trái/phải, TILT cúi/ngẩng). Không di chuyển, không camera, không cảm biến khoảng cách.
 
-Board này tách ra từ `esp32s3-weact-dog` (giữ nguyên phần mắt, âm thanh, Wi-Fi), thay 4 servo chân
-bằng 2 servo đầu và bỏ cảm biến ToF.
+## Sơ đồ chân
 
-## Sơ đồ chân (WeAct ESP32-S3 N16R8)
+Tất cả GPIO nằm trong [`board_pins.h`](board_pins.h). Chọn phần cứng bằng `NHI_HW_OLED`.
 
-Tất cả GPIO nằm trong [`board_pins.h`](board_pins.h).
+### `NHI_HW_OLED 1` (mặc định): mạch đỏ xiaozhi bread-compact
+
+| Linh kiện | Chân linh kiện → GPIO |
+|---|---|
+| OLED SSD1306 128×64 (cổng `OLED-1.3`) | SDA 41 · SCL 42 · VCC 3.3V |
+| Mic INMP441 | WS 4 · SCK 5 · SD 6 · L/R → GND |
+| Loa MAX98357A | DIN 7 · BCLK 15 · LRC 16 · GAIN/SD để hở |
+| Servo PAN (quay trái/phải) | tín hiệu GPIO 17 |
+| Servo TILT (cúi/ngẩng) | tín hiệu GPIO 18 |
+| Nút BOOT | GPIO 0 (nhấn để nói / ngắt lời) |
+| LED RGB WS2812 | GPIO 48 (trên board) |
+
+Mắt được vẽ như trên TFT rồi chuyển sang đơn sắc 1-bit (20 khung/giây qua I2C). Các hiệu ứng
+(!, ?, Zzz, tim, nước mắt) thu nhỏ theo `EYES_FX_PCT`. Màn quá nhỏ để hiện chữ hội thoại nên chỉ hiện
+thông báo hệ thống (Wi-Fi, mã kích hoạt). Màn bị ngược thì đổi `DISPLAY_MIRROR_X/Y` trong `config.h`.
+
+### `NHI_HW_OLED 0`: WeAct CoreBoard + TFT
 
 | Linh kiện | Chân linh kiện → GPIO |
 |---|---|
 | TFT ILI9341 (SPI) | SCK 40 · MOSI 41 · CS 39 · DC 38 · RST 47 · LED + VCC → 3.3V |
 | Mic INMP441 | SCK 16 · WS 17 · SD 14 · L/R → GND · VDD 3.3V |
 | Loa PCM5100A (WeAct I2S Speaker) | BCK 16 · WS 17 · DIN 15 · MC → GND · SD → 3.3V · VCC 5V |
-| (hoặc) MAX98357A | BCLK 16 · LRC 17 · DIN 15 · GAIN/SD để hở · VIN 5V |
-| Servo PAN (quay trái/phải) | tín hiệu GPIO 4 |
-| Servo TILT (cúi/ngẩng) | tín hiệu GPIO 5 |
-| Nút BOOT | GPIO 0 (nhấn để nói / ngắt lời) |
-| LED RGB WS2812 | GPIO 48 (trên board) |
+| Servo PAN / TILT | GPIO 4 / GPIO 5 |
+
+### Chung
 
 - Servo dùng nguồn 5V riêng (≥ 2A), **GND chung** với ESP32. Không lấy 5V servo từ chân 5V của board khi cắm USB.
-- Cả 2 servo phải là loại **180°** (SG90/MG90S). Servo 360° cũ ở GPIO 4 (chân FR của robot chó) phải thay.
-- Mic và loa dùng chung BCLK/WS (I2S full-duplex, 16 kHz). Nếu PCB đỏ đi dây âm thanh khác
-  (ví dụ BCLK 11, WS 12, DIN 14, DOUT 13), chỉ cần sửa 4 dòng `PIN_I2S_*` trong `board_pins.h`.
+- Cả 2 servo phải là loại **180°** (SG90/MG90S).
 
 ## Biểu cảm mắt + chuyển động đầu
 

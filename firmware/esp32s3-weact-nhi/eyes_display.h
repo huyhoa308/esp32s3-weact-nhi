@@ -77,6 +77,8 @@ public:
     void LookAt(unsigned char position);  // one of roboeyes N/NE/E/... DEFAULT
     void Blink();
     void Wink();
+    // Panel missing: keep animating (behaviour, logs) but never touch the bus.
+    void DisableOutput() { output_enabled_ = false; }
     void SetEmotionHook(EmotionHook hook) { emotion_hook_ = std::move(hook); }
     void SetChatHook(ChatHook hook) { chat_hook_ = std::move(hook); }
 
@@ -136,6 +138,8 @@ private:
     SemaphoreHandle_t dma_free_ = nullptr;   // counting: free push buffers
     uint16_t* dma_buf_[2] = {nullptr, nullptr};
     int dma_next_ = 0;
+    uint8_t* mono_buf_ = nullptr;            // OLED: 1 bpp, SSD1306 page order
+    volatile bool output_enabled_ = true;
     TaskHandle_t task_ = nullptr;
 
     // Subtitle (text is laid out once per change, not every frame)

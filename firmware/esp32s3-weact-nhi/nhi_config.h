@@ -41,10 +41,37 @@
 
 #define EYES_COLOR_FADE_STEP  24      // 0..256 per frame (24 ~ 10 frames to fade)
 
-#define EYES_FPS              30      // target frame rate (25..30)
 #define EYES_TASK_PRIORITY    2       // low: must never starve audio
 #define EYES_TASK_STACK       4096
 #define EYES_TASK_CORE        1       // tskNO_AFFINITY is also fine
+
+#if NHI_HW_OLED
+// ---- 128x64 monochrome OLED ----
+// The frame is drawn in RGB565 like on the TFT, then thresholded to 1 bit:
+// a pixel lights up when its brightness is above EYES_MONO_THRESHOLD (0..255).
+#define EYES_MONO             1
+#define EYES_MONO_THRESHOLD   40      // dark lenses of the sunglasses stay off
+#define EYES_FPS              20      // a full 1 KB frame over I2C @ 400 kHz ~ 25 ms
+#define EYES_FX_PCT           40      // overlay sizes (hearts, "?", Zzz...) vs. the 320x240 TFT
+#define EYES_SHOW_CHAT        0       // no room for chat text: eyes only (system messages still shown)
+
+#define EYES_WIDTH            36
+#define EYES_HEIGHT           36
+#define EYES_RADIUS           8
+#define EYES_SPACE            12
+#define EYES_WIDE_WIDTH       40
+#define EYES_WIDE_HEIGHT      46
+#define EYES_SQUINT_HEIGHT    18
+#define EYES_SWEAT_SCALE      1.0f
+#define EYES_PUSH_LINES       8       // unused on the OLED
+#define EYES_TEXT_SCALE       1
+#define EYES_TEXT_MAX_LINES   2
+#else
+// ---- 320x240 TFT ----
+#define EYES_MONO             0
+#define EYES_FPS              30      // target frame rate (25..30)
+#define EYES_FX_PCT           100
+#define EYES_SHOW_CHAT        1
 
 #define EYES_WIDTH            90
 #define EYES_HEIGHT           80
@@ -64,6 +91,7 @@
 // Bottom subtitle strip (ASCII + Vietnamese 8x16 font, scaled)
 #define EYES_TEXT_SCALE       2
 #define EYES_TEXT_MAX_LINES   2
+#endif
 // How long an assistant sentence stays on screen
 #define EYES_CHAT_TEXT_MS     6000
 

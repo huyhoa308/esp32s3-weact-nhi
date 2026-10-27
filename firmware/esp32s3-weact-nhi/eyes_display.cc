@@ -53,6 +53,23 @@ float tri(int64_t t, int period_ms, int phase_ms = 0) {
 float saw(int64_t t, int period_ms, int phase_ms = 0) {
     return (float)((t + phase_ms) % period_ms) / (float)period_ms;
 }
+
+// Overlay sizes were designed for the 320x240 TFT: scale them for the panel.
+int px(int v) {
+    int s = v * EYES_FX_PCT / 100;
+    return v > 0 ? std::max(1, s) : (v < 0 ? std::min(-1, s) : 0);
+}
+float pxf(float v) { return v * EYES_FX_PCT / 100.0f; }
+int text_scale(int s) { return std::max(1, s * EYES_FX_PCT / 100); }
+
+#if EYES_MONO
+// Brightness 0..255 of a canvas pixel (stored big-endian, panel order).
+int luma565(uint16_t be) {
+    uint16_t c = (uint16_t)((be >> 8) | (be << 8));
+    int r = (c >> 11) << 3, g = ((c >> 5) & 0x3F) << 2, b = (c & 0x1F) << 3;
+    return (r * 77 + g * 150 + b * 29) >> 8;
+}
+#endif
 }  // namespace
 
 EyesDisplay::EyesDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel,
@@ -68,6 +85,11 @@ EyesDisplay::EyesDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handl
 
     mutex_ = xSemaphoreCreateRecursiveMutex();
     dma_free_ = xSemaphoreCreateCounting(2, 2);
+#if EYES_MONO
+    // I2C panel IO is synchronous: one 1 bpp frame buffer, no DMA ping-pong.
+    mono_buf_ = (uint8_t*)heap_caps_calloc(1, width * height / 8, MALLOC_CAP_INTERNAL);
+    if (mono_buf_ == nullptr) ESP_LOGE(TAG, "Mono buffer allocation failed");
+#else
     for (auto& b : dma_buf_) {
         b = (uint16_t*)heap_caps_malloc(width * EYES_PUSH_LINES * sizeof(uint16_t),
                                         MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
@@ -77,11 +99,12 @@ EyesDisplay::EyesDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handl
     esp_lcd_panel_io_callbacks_t cbs = {};
     cbs.on_color_trans_done = &EyesDisplay::OnColorTransDone;
     ESP_ERROR_CHECK(esp_lcd_panel_io_register_event_callbacks(panel_io_, &cbs, this));
+#endif
 
     canvas_.setBackground(EYES_COLOR_BG);
     canvas_.fillScreen(EYES_COLOR_BG);
 
-    // RoboEyes setup sized for 320x240 (constants in nhi_config.h)
+    // RoboEyes setup sized for the panel (constants in nhi_config.h)
     current_color_ = target_color_ = EYES_COLOR_MAIN;
     eyes_.begin(width, height, EYES_FPS);
     eyes_.setDisplayColors(EYES_COLOR_BG, current_color_);
@@ -112,6 +135,7 @@ EyesDisplay::~EyesDisplay() {
     }
     if (task_) vTaskDelete(task_);
     for (auto& b : dma_buf_) heap_caps_free(b);
+    heap_caps_free(mono_buf_);
     vSemaphoreDelete(dma_free_);
     vSemaphoreDelete(mutex_);
 }
@@ -166,7 +190,7 @@ void EyesDisplay::SetChatMessage(const char* role, const char* content) {
         SetSubtitle(content, EYES_COLOR_TEXT, 0);
         return;
     }
-    if (subtitle_sticky_ || content[0] == 0) return;
+    if (subtitle_sticky_ || content[0] == 0 || !EYES_SHOW_CHAT) return;
     if (strcmp(role, "assistant") == 0) {
         SetSubtitle(content, EYES_COLOR_TEXT, EYES_CHAT_TEXT_MS);
     } else if (strcmp(role, "user") == 0) {
@@ -521,13 +545,13 @@ void EyesDisplay::UpdateTimedAnims(int64_t now) {
             shake_ = false;
             eyes_.setHFlicker(OFF);
         } else {
-            eyes_.setHFlicker(ON, 6);
+            eyes_.setHFlicker(ON, px(6));
         }
     }
     // Gentle bob while talking: eyes float a few pixels up and down.
     if (speaking_ && !eyes_.idle) {
         int base_y = eyes_.getScreenConstraint_Y() / 2;
-        int bob = (int)(tri(now, 700) * 8.0f) - 4;
+        int bob = (int)(tri(now, 700) * pxf(8.0f)) - px(4);
         eyes_.eyeLyNext = base_y + bob;
     }
 }
@@ -543,36 +567,39 @@ void EyesDisplay::DrawFx(int64_t now) {
     const int eyes_bottom = std::max(ly + lh, ry + rh);
     const int cx = (lx + rx + rw) / 2;
 
+    // All literal sizes below are for the 320x240 TFT; px() scales them.
     if (fx_ & kFxGlasses) {
         // Frames a bit larger than the eyes, dark lenses, white glint, bridge.
-        const int pad = 8;
+        const int pad = px(8), rim = px(4);
         int gy = eyes_top - pad;
         int gh = std::max(lh, rh) + 2 * pad;
-        canvas_.fillRoundRect(lx - pad, gy, lw + 2 * pad, gh, 14, 0x7BEF);
-        canvas_.fillRoundRect(rx - pad, gy, rw + 2 * pad, gh, 14, 0x7BEF);
-        canvas_.fillRoundRect(lx - pad + 4, gy + 4, lw + 2 * pad - 8, gh - 8, 11, FX_COLOR_GLASSES);
-        canvas_.fillRoundRect(rx - pad + 4, gy + 4, rw + 2 * pad - 8, gh - 8, 11, FX_COLOR_GLASSES);
-        canvas_.fillRect(lx + lw + pad, gy + 10, rx - lx - lw - 2 * pad, 6, 0x7BEF);
-        int glint = (int)(saw(t, 3000) * 160.0f) - 30;  // sweeping glint
+        canvas_.fillRoundRect(lx - pad, gy, lw + 2 * pad, gh, px(14), 0x7BEF);
+        canvas_.fillRoundRect(rx - pad, gy, rw + 2 * pad, gh, px(14), 0x7BEF);
+        canvas_.fillRoundRect(lx - pad + rim, gy + rim, lw + 2 * pad - 2 * rim, gh - 2 * rim, px(11),
+                              FX_COLOR_GLASSES);
+        canvas_.fillRoundRect(rx - pad + rim, gy + rim, rw + 2 * pad - 2 * rim, gh - 2 * rim, px(11),
+                              FX_COLOR_GLASSES);
+        canvas_.fillRect(lx + lw + pad, gy + px(10), rx - lx - lw - 2 * pad, px(6), 0x7BEF);
+        int glint = (int)(saw(t, 3000) * pxf(160.0f)) - px(30);  // sweeping glint
         if (glint > 0 && glint < lw) {
-            canvas_.fillTriangle(lx + glint, gy + 6, lx + glint + 10, gy + 6, lx + glint - 8,
-                                 gy + gh - 6, 0xFFFF);
+            canvas_.fillTriangle(lx + glint, gy + px(6), lx + glint + px(10), gy + px(6),
+                                 lx + glint - px(8), gy + gh - px(6), 0xFFFF);
         }
     }
 
     if (fx_ & kFxBlush) {
-        int by = eyes_bottom + 6;
-        canvas_.fillRoundRect(lx - 4, by, 40, 12, 6, FX_COLOR_BLUSH);
-        canvas_.fillRoundRect(rx + rw - 36, by, 40, 12, 6, FX_COLOR_BLUSH);
+        int by = eyes_bottom + px(6);
+        canvas_.fillRoundRect(lx - px(4), by, px(40), px(12), px(6), FX_COLOR_BLUSH);
+        canvas_.fillRoundRect(rx + rw - px(36), by, px(40), px(12), px(6), FX_COLOR_BLUSH);
     }
 
     if (fx_ & kFxTears) {
         // Two drops falling from the inner bottom of each eye.
         for (int i = 0; i < 2; ++i) {
             float p = saw(t, 1200, i * 600);
-            int ex = i == 0 ? lx + lw / 2 + 10 : rx + rw / 2 - 10;
-            int ey = (i == 0 ? ly + lh : ry + rh) + (int)(p * 60.0f);
-            int sz = 6 + (int)(p * 4.0f);
+            int ex = i == 0 ? lx + lw / 2 + px(10) : rx + rw / 2 - px(10);
+            int ey = (i == 0 ? ly + lh : ry + rh) + (int)(p * pxf(60.0f));
+            int sz = px(6) + (int)(p * pxf(4.0f));
             canvas_.fillTriangle(ex - sz, ey, ex + sz, ey, ex, ey - sz * 2, FX_COLOR_TEAR);
             FillCircle(ex, ey, sz, FX_COLOR_TEAR);
         }
@@ -580,73 +607,73 @@ void EyesDisplay::DrawFx(int64_t now) {
 
     if (fx_ & kFxHearts) {
         // Three hearts floating up beside the eyes, pulsing.
-        static const int kx[3] = {-40, 0, 40};
         for (int i = 0; i < 3; ++i) {
             float p = saw(t, 2400, i * 800);
-            int hx = (i == 1 ? cx : (kx[i] < 0 ? lx - 18 : rx + rw + 18));
-            int hy = eyes_bottom + 10 - (int)(p * (eyes_bottom + 10));
-            int s = 10 + (int)(tri(t, 600, i * 200) * 5.0f);
+            int hx = i == 1 ? cx : (i == 0 ? lx - px(18) : rx + rw + px(18));
+            int hy = eyes_bottom + px(10) - (int)(p * (eyes_bottom + px(10)));
+            int s = px(10) + (int)(tri(t, 600, i * 200) * pxf(5.0f));
             if (i == 1) {
-                hy = eyes_top - 14 - (int)(p * 20.0f);
-                s = 7 + (int)(tri(t, 600) * 3.0f);
+                hy = eyes_top - px(14) - (int)(p * pxf(20.0f));
+                s = px(7) + (int)(tri(t, 600) * pxf(3.0f));
             }
             DrawHeart(hx, hy, s, FX_COLOR_HEART);
         }
     }
 
     if (fx_ & kFxAnger) {
-        int s = 26 + (int)(tri(t, 500) * 8.0f);
-        DrawAngerMark(rx + rw + 4, eyes_top - 8, s, FX_COLOR_ANGER);
+        int s = px(26) + (int)(tri(t, 500) * pxf(8.0f));
+        DrawAngerMark(rx + rw + px(4), eyes_top - px(8), s, FX_COLOR_ANGER);
     }
 
     if (fx_ & kFxZzz) {
         // Three Z's of growing size drifting up-right.
         for (int i = 0; i < 3; ++i) {
             float p = saw(t, 3000, i * 1000);
-            int scale = 1 + (int)(p * 3.0f);
-            int zx = rx + rw - 10 + (int)(p * 40.0f);
-            int zy = eyes_top - 10 - (int)(p * 50.0f);
+            int scale = text_scale(1 + (int)(p * 3.0f));
+            int zx = rx + rw - px(10) + (int)(p * pxf(40.0f));
+            int zy = eyes_top - px(10) - (int)(p * pxf(50.0f));
             if (zy < 0) continue;
             canvas_.drawText(zx, zy, "Z", FX_COLOR_ZZZ, scale);
         }
     }
 
     if (fx_ & kFxQuestion) {
-        int qy = std::max(0, eyes_top - 60) + (int)(tri(t, 900) * 8.0f);
-        canvas_.drawText(rx + rw + 6, qy, "?", FX_COLOR_SYMBOL, 3);
+        int qy = std::max(0, eyes_top - px(60)) + (int)(tri(t, 900) * pxf(8.0f));
+        canvas_.drawText(rx + rw + px(6), qy, "?", FX_COLOR_SYMBOL, text_scale(3));
     }
 
     if (fx_ & kFxExclaim) {
-        int jitter = (t / 60) % 2 == 0 ? -2 : 2;
-        int ey = std::max(0, eyes_top - 60);
-        canvas_.drawText(rx + rw + 8 + (t < 1500 ? jitter : 0), ey, "!", FX_COLOR_SYMBOL, 3);
+        int jitter = (t / 60) % 2 == 0 ? -px(2) : px(2);
+        int ey = std::max(0, eyes_top - px(60));
+        canvas_.drawText(rx + rw + px(8) + (t < 1500 ? jitter : 0), ey, "!", FX_COLOR_SYMBOL,
+                         text_scale(3));
     }
 
     if (fx_ & kFxSparkle) {
         // Twinkling stars around the eyes.
         static const int kPos[4][2] = {{-26, -10}, {24, -18}, {-20, 30}, {30, 34}};
         for (int i = 0; i < 4; ++i) {
-            int s = (int)(tri(t, 900, i * 230) * 12.0f);
-            int px = i % 2 == 0 ? lx + kPos[i][0] : rx + rw + kPos[i][0];
-            int py = eyes_top + kPos[i][1];
-            DrawSparkle(px, py, s, FX_COLOR_SPARKLE);
+            int s = (int)(tri(t, 900, i * 230) * pxf(12.0f));
+            int sx = i % 2 == 0 ? lx + px(kPos[i][0]) : rx + rw + px(kPos[i][0]);
+            int sy = eyes_top + px(kPos[i][1]);
+            DrawSparkle(sx, sy, s, FX_COLOR_SPARKLE);
         }
     }
 
     if (fx_ & kFxNotes) {
         for (int i = 0; i < 2; ++i) {
             float p = saw(t, 1800, i * 900);
-            int nx = (i == 0 ? lx - 22 : rx + rw + 22) + (int)(sinf(p * 6.28f) * 6.0f);
-            int ny = eyes_bottom + 10 - (int)(p * (eyes_bottom - 10));
-            DrawNote(nx, ny, 14, FX_COLOR_NOTE);
+            int nx = (i == 0 ? lx - px(22) : rx + rw + px(22)) + (int)(sinf(p * 6.28f) * pxf(6.0f));
+            int ny = eyes_bottom + px(10) - (int)(p * (eyes_bottom - px(10)));
+            DrawNote(nx, ny, px(14), FX_COLOR_NOTE);
         }
     }
 
     if (fx_ & kFxTongue) {
-        int ty = eyes_bottom + 14;
-        int wob = (int)(tri(t, 800) * 6.0f);
-        canvas_.fillRect(cx - 30, ty, 60, 4, FX_COLOR_BLUSH);
-        canvas_.fillRoundRect(cx - 12, ty, 24, 18 + wob, 10, FX_COLOR_BLUSH);
+        int ty = eyes_bottom + px(14);
+        int wob = (int)(tri(t, 800) * pxf(6.0f));
+        canvas_.fillRect(cx - px(30), ty, px(60), px(4), FX_COLOR_BLUSH);
+        canvas_.fillRoundRect(cx - px(12), ty, px(24), px(18) + wob, px(10), FX_COLOR_BLUSH);
     }
 }
 
@@ -672,7 +699,7 @@ void EyesDisplay::LayoutSubtitle() {
     int scale = EYES_TEXT_SCALE;
     int per_line = width_ / (Rgb565Canvas::glyphW() * scale);
     int max_lines = EYES_TEXT_MAX_LINES;
-    if ((int)cps.size() > per_line * max_lines) {  // too long: use the small font
+    if (scale > 1 && (int)cps.size() > per_line * max_lines) {  // too long: use the small font
         scale = 1;
         per_line = width_ / Rgb565Canvas::glyphW();
         max_lines = EYES_TEXT_MAX_LINES * 2;
@@ -728,6 +755,26 @@ bool EyesDisplay::OnColorTransDone(esp_lcd_panel_io_handle_t, esp_lcd_panel_io_e
 }
 
 void EyesDisplay::Push(const DirtyBox& box) {
+    if (!output_enabled_) return;
+#if EYES_MONO
+    // Threshold the RGB565 frame to 1 bpp in SSD1306 page order (8 rows per
+    // byte, LSB on top) and send the whole 1 KB frame: cheaper than tracking pages.
+    if (box.empty() || mono_buf_ == nullptr) return;
+    const uint16_t* fb = canvas_.buffer();
+    for (int page = 0; page < height_ / 8; ++page) {
+        uint8_t* dst = mono_buf_ + page * width_;
+        for (int x = 0; x < width_; ++x) {
+            uint8_t bits = 0;
+            for (int b = 0; b < 8; ++b) {
+                if (luma565(fb[(size_t)(page * 8 + b) * width_ + x]) > EYES_MONO_THRESHOLD) {
+                    bits |= 1 << b;
+                }
+            }
+            dst[x] = bits;
+        }
+    }
+    esp_lcd_panel_draw_bitmap(panel_, 0, 0, width_, height_, mono_buf_);
+#else
     if (box.empty() || dma_buf_[0] == nullptr || dma_buf_[1] == nullptr) return;
     const uint16_t* fb = canvas_.buffer();
     int w = box.x1 - box.x0 + 1;
@@ -744,6 +791,7 @@ void EyesDisplay::Push(const DirtyBox& box) {
             xSemaphoreGive(dma_free_);  // no transfer queued, no callback will come
         }
     }
+#endif
 }
 
 void EyesDisplay::RenderLoop() {

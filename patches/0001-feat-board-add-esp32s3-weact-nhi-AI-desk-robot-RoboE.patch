@@ -1,36 +1,40 @@
-From 05f6f0d89f3f17ec9e26cd2b250b77ea1ac83452 Mon Sep 17 00:00:00 2001
+From 3f29db7c15ed8b494c8205dfe3c3bad08dd615dd Mon Sep 17 00:00:00 2001
 From: Truong Huy Hoa <huyhoa308@gmail.com>
 Date: Tue, 27 Oct 2026 16:57:38 +0700
 Subject: [PATCH] feat(board): add esp32s3-weact-nhi AI desk robot (RoboEyes +
  pan/tilt head)
 
-WeAct ESP32-S3 N16R8, ILI9341 eyes, INMP441 + PCM5100A/MAX98357A on one
-full-duplex I2S bus, two head servos (PAN GPIO 4, TILT GPIO 5).
-Eye expressions are synchronised with head motions, wake word "Chao Nhi".
+Two hardware variants (NHI_HW_OLED in board_pins.h):
+- red xiaozhi bread-compact PCB: SSD1306 128x64 OLED (SDA 41, SCL 42),
+  INMP441 (WS 4, SCK 5, SD 6) + MAX98357 (DIN 7, BCLK 15, LRC 16),
+  PAN servo GPIO 17, TILT servo GPIO 18 (default)
+- WeAct CoreBoard: ILI9341 TFT, INMP441 + PCM5100A on one I2S bus,
+  PAN servo GPIO 4, TILT servo GPIO 5
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Eye expressions are synchronised with smooth head motions,
+wake word "Chao Nhi".
 ---
  main/CMakeLists.txt                           |   5 +
  main/Kconfig.projbuild                        |  10 +
- .../esp32s3-weact-nhi/LICENSE-RoboEyes.txt    | 674 +++++++++++++++
- main/boards/esp32s3-weact-nhi/README.md       |  76 ++
- main/boards/esp32s3-weact-nhi/board_pins.h    |  43 +
- main/boards/esp32s3-weact-nhi/config.h        |  29 +
+ .../esp32s3-weact-nhi/LICENSE-RoboEyes.txt    | 674 ++++++++++++++
+ main/boards/esp32s3-weact-nhi/README.md       |  87 ++
+ main/boards/esp32s3-weact-nhi/board_pins.h    |  66 ++
+ main/boards/esp32s3-weact-nhi/config.h        |  45 +
  main/boards/esp32s3-weact-nhi/config.json     |  27 +
- main/boards/esp32s3-weact-nhi/eyes_display.cc | 782 ++++++++++++++++++
- main/boards/esp32s3-weact-nhi/eyes_display.h  | 167 ++++
- main/boards/esp32s3-weact-nhi/font_8x16.h     | 240 ++++++
+ main/boards/esp32s3-weact-nhi/eyes_display.cc | 830 ++++++++++++++++++
+ main/boards/esp32s3-weact-nhi/eyes_display.h  | 171 ++++
+ main/boards/esp32s3-weact-nhi/font_8x16.h     | 240 +++++
  main/boards/esp32s3-weact-nhi/head_servos.cc  | 297 +++++++
- main/boards/esp32s3-weact-nhi/head_servos.h   |  93 +++
- main/boards/esp32s3-weact-nhi/nhi_behavior.cc | 284 +++++++
+ main/boards/esp32s3-weact-nhi/head_servos.h   |  93 ++
+ main/boards/esp32s3-weact-nhi/nhi_behavior.cc | 284 ++++++
  main/boards/esp32s3-weact-nhi/nhi_behavior.h  |  55 ++
- main/boards/esp32s3-weact-nhi/nhi_config.h    | 128 +++
- .../boards/esp32s3-weact-nhi/rgb565_canvas.cc | 238 ++++++
+ main/boards/esp32s3-weact-nhi/nhi_config.h    | 156 ++++
+ .../boards/esp32s3-weact-nhi/rgb565_canvas.cc | 238 +++++
  main/boards/esp32s3-weact-nhi/rgb565_canvas.h |  61 ++
- main/boards/esp32s3-weact-nhi/roboeyes_port.h | 751 +++++++++++++++++
+ main/boards/esp32s3-weact-nhi/roboeyes_port.h | 751 ++++++++++++++++
  .../esp32s3-weact-nhi/tools/gen_font_8x16.py  |  49 ++
- .../esp32s3-weact-nhi/weact_nhi_board.cc      | 273 ++++++
- 20 files changed, 4282 insertions(+)
+ .../esp32s3-weact-nhi/weact_nhi_board.cc      | 375 ++++++++
+ 20 files changed, 4514 insertions(+)
  create mode 100644 main/boards/esp32s3-weact-nhi/LICENSE-RoboEyes.txt
  create mode 100644 main/boards/esp32s3-weact-nhi/README.md
  create mode 100644 main/boards/esp32s3-weact-nhi/board_pins.h
@@ -773,37 +777,48 @@ index 0000000..f288702
 +<https://www.gnu.org/licenses/why-not-lgpl.html>.
 diff --git a/main/boards/esp32s3-weact-nhi/README.md b/main/boards/esp32s3-weact-nhi/README.md
 new file mode 100644
-index 0000000..2af285a
+index 0000000..80fbac3
 --- /dev/null
 +++ b/main/boards/esp32s3-weact-nhi/README.md
-@@ -0,0 +1,76 @@
+@@ -0,0 +1,87 @@
 +# Board `esp32s3-weact-nhi` – Robot Nhi AI để bàn
 +
-+Robot trợ lý AI để bàn: màn hình TFT hiển thị đôi mắt RoboEyes + đầu quay bằng 2 servo
++Robot trợ lý AI để bàn: màn hình hiển thị đôi mắt RoboEyes + đầu quay bằng 2 servo
 +(PAN trái/phải, TILT cúi/ngẩng). Không di chuyển, không camera, không cảm biến khoảng cách.
 +
-+Board này tách ra từ `esp32s3-weact-dog` (giữ nguyên phần mắt, âm thanh, Wi-Fi), thay 4 servo chân
-+bằng 2 servo đầu và bỏ cảm biến ToF.
++## Sơ đồ chân
 +
-+## Sơ đồ chân (WeAct ESP32-S3 N16R8)
++Tất cả GPIO nằm trong [`board_pins.h`](board_pins.h). Chọn phần cứng bằng `NHI_HW_OLED`.
 +
-+Tất cả GPIO nằm trong [`board_pins.h`](board_pins.h).
++### `NHI_HW_OLED 1` (mặc định): mạch đỏ xiaozhi bread-compact
++
++| Linh kiện | Chân linh kiện → GPIO |
++|---|---|
++| OLED SSD1306 128×64 (cổng `OLED-1.3`) | SDA 41 · SCL 42 · VCC 3.3V |
++| Mic INMP441 | WS 4 · SCK 5 · SD 6 · L/R → GND |
++| Loa MAX98357A | DIN 7 · BCLK 15 · LRC 16 · GAIN/SD để hở |
++| Servo PAN (quay trái/phải) | tín hiệu GPIO 17 |
++| Servo TILT (cúi/ngẩng) | tín hiệu GPIO 18 |
++| Nút BOOT | GPIO 0 (nhấn để nói / ngắt lời) |
++| LED RGB WS2812 | GPIO 48 (trên board) |
++
++Mắt được vẽ như trên TFT rồi chuyển sang đơn sắc 1-bit (20 khung/giây qua I2C). Các hiệu ứng
++(!, ?, Zzz, tim, nước mắt) thu nhỏ theo `EYES_FX_PCT`. Màn quá nhỏ để hiện chữ hội thoại nên chỉ hiện
++thông báo hệ thống (Wi-Fi, mã kích hoạt). Màn bị ngược thì đổi `DISPLAY_MIRROR_X/Y` trong `config.h`.
++
++### `NHI_HW_OLED 0`: WeAct CoreBoard + TFT
 +
 +| Linh kiện | Chân linh kiện → GPIO |
 +|---|---|
 +| TFT ILI9341 (SPI) | SCK 40 · MOSI 41 · CS 39 · DC 38 · RST 47 · LED + VCC → 3.3V |
 +| Mic INMP441 | SCK 16 · WS 17 · SD 14 · L/R → GND · VDD 3.3V |
 +| Loa PCM5100A (WeAct I2S Speaker) | BCK 16 · WS 17 · DIN 15 · MC → GND · SD → 3.3V · VCC 5V |
-+| (hoặc) MAX98357A | BCLK 16 · LRC 17 · DIN 15 · GAIN/SD để hở · VIN 5V |
-+| Servo PAN (quay trái/phải) | tín hiệu GPIO 4 |
-+| Servo TILT (cúi/ngẩng) | tín hiệu GPIO 5 |
-+| Nút BOOT | GPIO 0 (nhấn để nói / ngắt lời) |
-+| LED RGB WS2812 | GPIO 48 (trên board) |
++| Servo PAN / TILT | GPIO 4 / GPIO 5 |
++
++### Chung
 +
 +- Servo dùng nguồn 5V riêng (≥ 2A), **GND chung** với ESP32. Không lấy 5V servo từ chân 5V của board khi cắm USB.
-+- Cả 2 servo phải là loại **180°** (SG90/MG90S). Servo 360° cũ ở GPIO 4 (chân FR của robot chó) phải thay.
-+- Mic và loa dùng chung BCLK/WS (I2S full-duplex, 16 kHz). Nếu PCB đỏ đi dây âm thanh khác
-+  (ví dụ BCLK 11, WS 12, DIN 14, DOUT 13), chỉ cần sửa 4 dòng `PIN_I2S_*` trong `board_pins.h`.
++- Cả 2 servo phải là loại **180°** (SG90/MG90S).
 +
 +## Biểu cảm mắt + chuyển động đầu
 +
@@ -855,19 +870,46 @@ index 0000000..2af285a
 +```
 diff --git a/main/boards/esp32s3-weact-nhi/board_pins.h b/main/boards/esp32s3-weact-nhi/board_pins.h
 new file mode 100644
-index 0000000..7420052
+index 0000000..81f330c
 --- /dev/null
 +++ b/main/boards/esp32s3-weact-nhi/board_pins.h
-@@ -0,0 +1,43 @@
+@@ -0,0 +1,66 @@
 +// Single source of truth for every GPIO used (or reserved) by the
-+// "Nhi" desk robot on a WeAct ESP32-S3 CoreBoard N16R8.
-+// Display and audio pins are the ones verified on the bench for the dog robot
-+// (esp32s3_weact_xiaozhirobot, HARDWARE_SETUP.md). The two head servos reuse
-+// the old FR / RR leg pins (GPIO 4 / 5).
++// "Nhi" desk robot. Two hardware variants share the same firmware:
++//
++//   NHI_HW_OLED = 1 (default): red xiaozhi "bread-compact" PCB, ESP32-S3 N16R8
++//     clone, SSD1306 128x64 OLED (I2C), INMP441 mic + MAX98357 amp on two
++//     separate I2S buses. Pins follow the silkscreen of that PCB (same as the
++//     upstream bread-compact-wifi board).
++//   NHI_HW_OLED = 0: WeAct CoreBoard + ILI9341 TFT + INMP441 / PCM5100A sharing
++//     one I2S bus (pins verified on the dog robot bench, HARDWARE_SETUP.md).
 +#pragma once
 +
 +#include <driver/gpio.h>
 +
++#ifndef NHI_HW_OLED
++#define NHI_HW_OLED 1
++#endif
++
++#if NHI_HW_OLED
++// ---- OLED SSD1306 128x64 (I2C, header "OLED-1.3": VCC GND SCL SDA) ----------
++#define PIN_OLED_SDA  GPIO_NUM_41
++#define PIN_OLED_SCL  GPIO_NUM_42
++
++// ---- Audio: simplex, mic and speaker on their own clocks --------------------
++#define PIN_MIC_WS    GPIO_NUM_4   // INMP441 WS
++#define PIN_MIC_SCK   GPIO_NUM_5   // INMP441 SCK
++#define PIN_MIC_SD    GPIO_NUM_6   // INMP441 SD -> ESP32
++#define PIN_SPK_DIN   GPIO_NUM_7   // ESP32 -> MAX98357 DIN
++#define PIN_SPK_BCLK  GPIO_NUM_15  // MAX98357 BCLK
++#define PIN_SPK_LRC   GPIO_NUM_16  // MAX98357 LRC
++
++// ---- Head servos (signal only; V+ from a separate 5 V >= 2 A supply) --------
++// Free pins on the left DevKit header; GPIO 4/5 are taken by the mic here.
++#define PIN_SERVO_PAN   GPIO_NUM_17  // turn left / right
++#define PIN_SERVO_TILT  GPIO_NUM_18  // nod down / up
++
++#else
 +// ---- TFT ILI9341 2.4"/2.8" (SPI) -------------------------------------------
 +#define PIN_TFT_DC    GPIO_NUM_38
 +#define PIN_TFT_CS    GPIO_NUM_39
@@ -878,51 +920,62 @@ index 0000000..7420052
 +#define PIN_TFT_BL    GPIO_NUM_NC  // backlight tied to 3.3V
 +
 +// ---- Audio: one full-duplex I2S bus -----------------------------------------
-+// INMP441 (mic, L/R -> GND = left slot) and the speaker DAC/amp share BCK and WS.
-+// Works with the WeAct I2S Speaker V1 (PCM5100A: VCC 5V, SD 3.3V, MC GND) and
-+// with a MAX98357A (BCLK / LRC / DIN on the same pins, GAIN + SD open).
-+// If your red PCB routes audio to BCLK 11 / WS 12 / DIN 14 / DOUT 13, change
-+// only these four lines.
++// INMP441 (mic, L/R -> GND = left slot) and the WeAct I2S Speaker V1
++// (PCM5100A: VCC 5V, SD 3.3V, MC GND) share BCK and WS.
 +#define PIN_I2S_BCLK  GPIO_NUM_16
 +#define PIN_I2S_WS    GPIO_NUM_17
 +#define PIN_I2S_DIN   GPIO_NUM_14  // INMP441 SD  -> ESP32
-+#define PIN_I2S_DOUT  GPIO_NUM_15  // ESP32 -> DAC/amp DIN
++#define PIN_I2S_DOUT  GPIO_NUM_15  // ESP32 -> DAC DIN
 +
 +// ---- Head servos (signal only; V+ from a separate 5 V >= 2 A supply) --------
-+// Both must be 180 deg servos (SG90 / MG90S). The old FR leg on GPIO 4 was a
-+// 360 deg servo: replace it before using it as PAN.
++// Both must be 180 deg servos. The old FR leg on GPIO 4 was a 360 deg servo.
 +#define PIN_SERVO_PAN   GPIO_NUM_4  // turn left / right
 +#define PIN_SERVO_TILT  GPIO_NUM_5  // nod down / up
++#endif
 +
-+// ---- UI --------------------------------------------------------------------
++// ---- UI (both variants) ----------------------------------------------------
 +#define PIN_BUTTON_TALK GPIO_NUM_0   // BOOT button, input only
 +#define PIN_STATUS_LED  GPIO_NUM_48  // onboard WS2812
 +
-+// ---- Free / reserved (do not use) ------------------------------------------
-+// GPIO 6, 7 (old RL / FL legs), 8, 9, 21 (old I2C ToF) : free
++// ---- Reserved (do not use) -------------------------------------------------
 +// USB D- 19 / D+ 20               : native USB
 +// Never use: 0 as output, 3/45/46 (strapping), 26..32 (flash), 35..37 (OPI PSRAM)
 diff --git a/main/boards/esp32s3-weact-nhi/config.h b/main/boards/esp32s3-weact-nhi/config.h
 new file mode 100644
-index 0000000..b0f1c15
+index 0000000..40432ed
 --- /dev/null
 +++ b/main/boards/esp32s3-weact-nhi/config.h
-@@ -0,0 +1,29 @@
+@@ -0,0 +1,45 @@
 +#ifndef _BOARD_CONFIG_H_
 +#define _BOARD_CONFIG_H_
 +
 +#include "board_pins.h"
 +
-+// Audio: mic and DAC share one I2S bus (same clock), so both run at 16 kHz.
-+// 16 kHz is what the AFE / wake word wants (no input resampler, less CPU) and
-+// the Opus decoder outputs 16 kHz directly.
-+#define AUDIO_INPUT_SAMPLE_RATE  16000
-+#define AUDIO_OUTPUT_SAMPLE_RATE 16000
 +// Default volume (0..100, changeable by voice; the NVS value wins once set).
 +#define AUDIO_DEFAULT_OUTPUT_VOLUME 70
 +
 +#define BOOT_BUTTON_GPIO PIN_BUTTON_TALK
 +#define BUILTIN_LED_GPIO PIN_STATUS_LED
++
++#if NHI_HW_OLED
++// Audio: mic and MAX98357 on separate I2S ports (simplex), as upstream
++// bread-compact-wifi: the mic runs at 16 kHz for the AFE / wake word.
++#define AUDIO_INPUT_SAMPLE_RATE  16000
++#define AUDIO_OUTPUT_SAMPLE_RATE 24000
++
++// Display: SSD1306 128x64 on I2C. Upside down? Flip both mirrors.
++#define DISPLAY_WIDTH        128
++#define DISPLAY_HEIGHT       64
++#define DISPLAY_I2C_ADDR     0x3C
++#define DISPLAY_I2C_HZ       (400 * 1000)
++#define DISPLAY_MIRROR_X     true
++#define DISPLAY_MIRROR_Y     true
++#else
++// Audio: mic and DAC share one I2S bus (same clock), so both run at 16 kHz.
++// 16 kHz is what the AFE / wake word wants (no input resampler, less CPU) and
++// the Opus decoder outputs 16 kHz directly.
++#define AUDIO_INPUT_SAMPLE_RATE  16000
++#define AUDIO_OUTPUT_SAMPLE_RATE 16000
 +
 +// Display: ILI9341 in landscape (same as Adafruit rotation 1, verified).
 +#define DISPLAY_WIDTH    320
@@ -935,6 +988,7 @@ index 0000000..b0f1c15
 +#define DISPLAY_MIRROR_Y     false  // set both true for rotation 3 (upside down)
 +#define DISPLAY_INVERT_COLOR false
 +#define DISPLAY_RGB_ORDER    LCD_RGB_ELEMENT_ORDER_BGR
++#endif
 +
 +#endif  // _BOARD_CONFIG_H_
 diff --git a/main/boards/esp32s3-weact-nhi/config.json b/main/boards/esp32s3-weact-nhi/config.json
@@ -972,10 +1026,10 @@ index 0000000..3f12e41
 +}
 diff --git a/main/boards/esp32s3-weact-nhi/eyes_display.cc b/main/boards/esp32s3-weact-nhi/eyes_display.cc
 new file mode 100644
-index 0000000..361a2a4
+index 0000000..865924a
 --- /dev/null
 +++ b/main/boards/esp32s3-weact-nhi/eyes_display.cc
-@@ -0,0 +1,782 @@
+@@ -0,0 +1,830 @@
 +#include "eyes_display.h"
 +
 +#include <esp_heap_caps.h>
@@ -1031,6 +1085,23 @@ index 0000000..361a2a4
 +float saw(int64_t t, int period_ms, int phase_ms = 0) {
 +    return (float)((t + phase_ms) % period_ms) / (float)period_ms;
 +}
++
++// Overlay sizes were designed for the 320x240 TFT: scale them for the panel.
++int px(int v) {
++    int s = v * EYES_FX_PCT / 100;
++    return v > 0 ? std::max(1, s) : (v < 0 ? std::min(-1, s) : 0);
++}
++float pxf(float v) { return v * EYES_FX_PCT / 100.0f; }
++int text_scale(int s) { return std::max(1, s * EYES_FX_PCT / 100); }
++
++#if EYES_MONO
++// Brightness 0..255 of a canvas pixel (stored big-endian, panel order).
++int luma565(uint16_t be) {
++    uint16_t c = (uint16_t)((be >> 8) | (be << 8));
++    int r = (c >> 11) << 3, g = ((c >> 5) & 0x3F) << 2, b = (c & 0x1F) << 3;
++    return (r * 77 + g * 150 + b * 29) >> 8;
++}
++#endif
 +}  // namespace
 +
 +EyesDisplay::EyesDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel,
@@ -1046,6 +1117,11 @@ index 0000000..361a2a4
 +
 +    mutex_ = xSemaphoreCreateRecursiveMutex();
 +    dma_free_ = xSemaphoreCreateCounting(2, 2);
++#if EYES_MONO
++    // I2C panel IO is synchronous: one 1 bpp frame buffer, no DMA ping-pong.
++    mono_buf_ = (uint8_t*)heap_caps_calloc(1, width * height / 8, MALLOC_CAP_INTERNAL);
++    if (mono_buf_ == nullptr) ESP_LOGE(TAG, "Mono buffer allocation failed");
++#else
 +    for (auto& b : dma_buf_) {
 +        b = (uint16_t*)heap_caps_malloc(width * EYES_PUSH_LINES * sizeof(uint16_t),
 +                                        MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
@@ -1055,11 +1131,12 @@ index 0000000..361a2a4
 +    esp_lcd_panel_io_callbacks_t cbs = {};
 +    cbs.on_color_trans_done = &EyesDisplay::OnColorTransDone;
 +    ESP_ERROR_CHECK(esp_lcd_panel_io_register_event_callbacks(panel_io_, &cbs, this));
++#endif
 +
 +    canvas_.setBackground(EYES_COLOR_BG);
 +    canvas_.fillScreen(EYES_COLOR_BG);
 +
-+    // RoboEyes setup sized for 320x240 (constants in nhi_config.h)
++    // RoboEyes setup sized for the panel (constants in nhi_config.h)
 +    current_color_ = target_color_ = EYES_COLOR_MAIN;
 +    eyes_.begin(width, height, EYES_FPS);
 +    eyes_.setDisplayColors(EYES_COLOR_BG, current_color_);
@@ -1090,6 +1167,7 @@ index 0000000..361a2a4
 +    }
 +    if (task_) vTaskDelete(task_);
 +    for (auto& b : dma_buf_) heap_caps_free(b);
++    heap_caps_free(mono_buf_);
 +    vSemaphoreDelete(dma_free_);
 +    vSemaphoreDelete(mutex_);
 +}
@@ -1144,7 +1222,7 @@ index 0000000..361a2a4
 +        SetSubtitle(content, EYES_COLOR_TEXT, 0);
 +        return;
 +    }
-+    if (subtitle_sticky_ || content[0] == 0) return;
++    if (subtitle_sticky_ || content[0] == 0 || !EYES_SHOW_CHAT) return;
 +    if (strcmp(role, "assistant") == 0) {
 +        SetSubtitle(content, EYES_COLOR_TEXT, EYES_CHAT_TEXT_MS);
 +    } else if (strcmp(role, "user") == 0) {
@@ -1499,13 +1577,13 @@ index 0000000..361a2a4
 +            shake_ = false;
 +            eyes_.setHFlicker(OFF);
 +        } else {
-+            eyes_.setHFlicker(ON, 6);
++            eyes_.setHFlicker(ON, px(6));
 +        }
 +    }
 +    // Gentle bob while talking: eyes float a few pixels up and down.
 +    if (speaking_ && !eyes_.idle) {
 +        int base_y = eyes_.getScreenConstraint_Y() / 2;
-+        int bob = (int)(tri(now, 700) * 8.0f) - 4;
++        int bob = (int)(tri(now, 700) * pxf(8.0f)) - px(4);
 +        eyes_.eyeLyNext = base_y + bob;
 +    }
 +}
@@ -1521,36 +1599,39 @@ index 0000000..361a2a4
 +    const int eyes_bottom = std::max(ly + lh, ry + rh);
 +    const int cx = (lx + rx + rw) / 2;
 +
++    // All literal sizes below are for the 320x240 TFT; px() scales them.
 +    if (fx_ & kFxGlasses) {
 +        // Frames a bit larger than the eyes, dark lenses, white glint, bridge.
-+        const int pad = 8;
++        const int pad = px(8), rim = px(4);
 +        int gy = eyes_top - pad;
 +        int gh = std::max(lh, rh) + 2 * pad;
-+        canvas_.fillRoundRect(lx - pad, gy, lw + 2 * pad, gh, 14, 0x7BEF);
-+        canvas_.fillRoundRect(rx - pad, gy, rw + 2 * pad, gh, 14, 0x7BEF);
-+        canvas_.fillRoundRect(lx - pad + 4, gy + 4, lw + 2 * pad - 8, gh - 8, 11, FX_COLOR_GLASSES);
-+        canvas_.fillRoundRect(rx - pad + 4, gy + 4, rw + 2 * pad - 8, gh - 8, 11, FX_COLOR_GLASSES);
-+        canvas_.fillRect(lx + lw + pad, gy + 10, rx - lx - lw - 2 * pad, 6, 0x7BEF);
-+        int glint = (int)(saw(t, 3000) * 160.0f) - 30;  // sweeping glint
++        canvas_.fillRoundRect(lx - pad, gy, lw + 2 * pad, gh, px(14), 0x7BEF);
++        canvas_.fillRoundRect(rx - pad, gy, rw + 2 * pad, gh, px(14), 0x7BEF);
++        canvas_.fillRoundRect(lx - pad + rim, gy + rim, lw + 2 * pad - 2 * rim, gh - 2 * rim, px(11),
++                              FX_COLOR_GLASSES);
++        canvas_.fillRoundRect(rx - pad + rim, gy + rim, rw + 2 * pad - 2 * rim, gh - 2 * rim, px(11),
++                              FX_COLOR_GLASSES);
++        canvas_.fillRect(lx + lw + pad, gy + px(10), rx - lx - lw - 2 * pad, px(6), 0x7BEF);
++        int glint = (int)(saw(t, 3000) * pxf(160.0f)) - px(30);  // sweeping glint
 +        if (glint > 0 && glint < lw) {
-+            canvas_.fillTriangle(lx + glint, gy + 6, lx + glint + 10, gy + 6, lx + glint - 8,
-+                                 gy + gh - 6, 0xFFFF);
++            canvas_.fillTriangle(lx + glint, gy + px(6), lx + glint + px(10), gy + px(6),
++                                 lx + glint - px(8), gy + gh - px(6), 0xFFFF);
 +        }
 +    }
 +
 +    if (fx_ & kFxBlush) {
-+        int by = eyes_bottom + 6;
-+        canvas_.fillRoundRect(lx - 4, by, 40, 12, 6, FX_COLOR_BLUSH);
-+        canvas_.fillRoundRect(rx + rw - 36, by, 40, 12, 6, FX_COLOR_BLUSH);
++        int by = eyes_bottom + px(6);
++        canvas_.fillRoundRect(lx - px(4), by, px(40), px(12), px(6), FX_COLOR_BLUSH);
++        canvas_.fillRoundRect(rx + rw - px(36), by, px(40), px(12), px(6), FX_COLOR_BLUSH);
 +    }
 +
 +    if (fx_ & kFxTears) {
 +        // Two drops falling from the inner bottom of each eye.
 +        for (int i = 0; i < 2; ++i) {
 +            float p = saw(t, 1200, i * 600);
-+            int ex = i == 0 ? lx + lw / 2 + 10 : rx + rw / 2 - 10;
-+            int ey = (i == 0 ? ly + lh : ry + rh) + (int)(p * 60.0f);
-+            int sz = 6 + (int)(p * 4.0f);
++            int ex = i == 0 ? lx + lw / 2 + px(10) : rx + rw / 2 - px(10);
++            int ey = (i == 0 ? ly + lh : ry + rh) + (int)(p * pxf(60.0f));
++            int sz = px(6) + (int)(p * pxf(4.0f));
 +            canvas_.fillTriangle(ex - sz, ey, ex + sz, ey, ex, ey - sz * 2, FX_COLOR_TEAR);
 +            FillCircle(ex, ey, sz, FX_COLOR_TEAR);
 +        }
@@ -1558,73 +1639,73 @@ index 0000000..361a2a4
 +
 +    if (fx_ & kFxHearts) {
 +        // Three hearts floating up beside the eyes, pulsing.
-+        static const int kx[3] = {-40, 0, 40};
 +        for (int i = 0; i < 3; ++i) {
 +            float p = saw(t, 2400, i * 800);
-+            int hx = (i == 1 ? cx : (kx[i] < 0 ? lx - 18 : rx + rw + 18));
-+            int hy = eyes_bottom + 10 - (int)(p * (eyes_bottom + 10));
-+            int s = 10 + (int)(tri(t, 600, i * 200) * 5.0f);
++            int hx = i == 1 ? cx : (i == 0 ? lx - px(18) : rx + rw + px(18));
++            int hy = eyes_bottom + px(10) - (int)(p * (eyes_bottom + px(10)));
++            int s = px(10) + (int)(tri(t, 600, i * 200) * pxf(5.0f));
 +            if (i == 1) {
-+                hy = eyes_top - 14 - (int)(p * 20.0f);
-+                s = 7 + (int)(tri(t, 600) * 3.0f);
++                hy = eyes_top - px(14) - (int)(p * pxf(20.0f));
++                s = px(7) + (int)(tri(t, 600) * pxf(3.0f));
 +            }
 +            DrawHeart(hx, hy, s, FX_COLOR_HEART);
 +        }
 +    }
 +
 +    if (fx_ & kFxAnger) {
-+        int s = 26 + (int)(tri(t, 500) * 8.0f);
-+        DrawAngerMark(rx + rw + 4, eyes_top - 8, s, FX_COLOR_ANGER);
++        int s = px(26) + (int)(tri(t, 500) * pxf(8.0f));
++        DrawAngerMark(rx + rw + px(4), eyes_top - px(8), s, FX_COLOR_ANGER);
 +    }
 +
 +    if (fx_ & kFxZzz) {
 +        // Three Z's of growing size drifting up-right.
 +        for (int i = 0; i < 3; ++i) {
 +            float p = saw(t, 3000, i * 1000);
-+            int scale = 1 + (int)(p * 3.0f);
-+            int zx = rx + rw - 10 + (int)(p * 40.0f);
-+            int zy = eyes_top - 10 - (int)(p * 50.0f);
++            int scale = text_scale(1 + (int)(p * 3.0f));
++            int zx = rx + rw - px(10) + (int)(p * pxf(40.0f));
++            int zy = eyes_top - px(10) - (int)(p * pxf(50.0f));
 +            if (zy < 0) continue;
 +            canvas_.drawText(zx, zy, "Z", FX_COLOR_ZZZ, scale);
 +        }
 +    }
 +
 +    if (fx_ & kFxQuestion) {
-+        int qy = std::max(0, eyes_top - 60) + (int)(tri(t, 900) * 8.0f);
-+        canvas_.drawText(rx + rw + 6, qy, "?", FX_COLOR_SYMBOL, 3);
++        int qy = std::max(0, eyes_top - px(60)) + (int)(tri(t, 900) * pxf(8.0f));
++        canvas_.drawText(rx + rw + px(6), qy, "?", FX_COLOR_SYMBOL, text_scale(3));
 +    }
 +
 +    if (fx_ & kFxExclaim) {
-+        int jitter = (t / 60) % 2 == 0 ? -2 : 2;
-+        int ey = std::max(0, eyes_top - 60);
-+        canvas_.drawText(rx + rw + 8 + (t < 1500 ? jitter : 0), ey, "!", FX_COLOR_SYMBOL, 3);
++        int jitter = (t / 60) % 2 == 0 ? -px(2) : px(2);
++        int ey = std::max(0, eyes_top - px(60));
++        canvas_.drawText(rx + rw + px(8) + (t < 1500 ? jitter : 0), ey, "!", FX_COLOR_SYMBOL,
++                         text_scale(3));
 +    }
 +
 +    if (fx_ & kFxSparkle) {
 +        // Twinkling stars around the eyes.
 +        static const int kPos[4][2] = {{-26, -10}, {24, -18}, {-20, 30}, {30, 34}};
 +        for (int i = 0; i < 4; ++i) {
-+            int s = (int)(tri(t, 900, i * 230) * 12.0f);
-+            int px = i % 2 == 0 ? lx + kPos[i][0] : rx + rw + kPos[i][0];
-+            int py = eyes_top + kPos[i][1];
-+            DrawSparkle(px, py, s, FX_COLOR_SPARKLE);
++            int s = (int)(tri(t, 900, i * 230) * pxf(12.0f));
++            int sx = i % 2 == 0 ? lx + px(kPos[i][0]) : rx + rw + px(kPos[i][0]);
++            int sy = eyes_top + px(kPos[i][1]);
++            DrawSparkle(sx, sy, s, FX_COLOR_SPARKLE);
 +        }
 +    }
 +
 +    if (fx_ & kFxNotes) {
 +        for (int i = 0; i < 2; ++i) {
 +            float p = saw(t, 1800, i * 900);
-+            int nx = (i == 0 ? lx - 22 : rx + rw + 22) + (int)(sinf(p * 6.28f) * 6.0f);
-+            int ny = eyes_bottom + 10 - (int)(p * (eyes_bottom - 10));
-+            DrawNote(nx, ny, 14, FX_COLOR_NOTE);
++            int nx = (i == 0 ? lx - px(22) : rx + rw + px(22)) + (int)(sinf(p * 6.28f) * pxf(6.0f));
++            int ny = eyes_bottom + px(10) - (int)(p * (eyes_bottom - px(10)));
++            DrawNote(nx, ny, px(14), FX_COLOR_NOTE);
 +        }
 +    }
 +
 +    if (fx_ & kFxTongue) {
-+        int ty = eyes_bottom + 14;
-+        int wob = (int)(tri(t, 800) * 6.0f);
-+        canvas_.fillRect(cx - 30, ty, 60, 4, FX_COLOR_BLUSH);
-+        canvas_.fillRoundRect(cx - 12, ty, 24, 18 + wob, 10, FX_COLOR_BLUSH);
++        int ty = eyes_bottom + px(14);
++        int wob = (int)(tri(t, 800) * pxf(6.0f));
++        canvas_.fillRect(cx - px(30), ty, px(60), px(4), FX_COLOR_BLUSH);
++        canvas_.fillRoundRect(cx - px(12), ty, px(24), px(18) + wob, px(10), FX_COLOR_BLUSH);
 +    }
 +}
 +
@@ -1650,7 +1731,7 @@ index 0000000..361a2a4
 +    int scale = EYES_TEXT_SCALE;
 +    int per_line = width_ / (Rgb565Canvas::glyphW() * scale);
 +    int max_lines = EYES_TEXT_MAX_LINES;
-+    if ((int)cps.size() > per_line * max_lines) {  // too long: use the small font
++    if (scale > 1 && (int)cps.size() > per_line * max_lines) {  // too long: use the small font
 +        scale = 1;
 +        per_line = width_ / Rgb565Canvas::glyphW();
 +        max_lines = EYES_TEXT_MAX_LINES * 2;
@@ -1706,6 +1787,26 @@ index 0000000..361a2a4
 +}
 +
 +void EyesDisplay::Push(const DirtyBox& box) {
++    if (!output_enabled_) return;
++#if EYES_MONO
++    // Threshold the RGB565 frame to 1 bpp in SSD1306 page order (8 rows per
++    // byte, LSB on top) and send the whole 1 KB frame: cheaper than tracking pages.
++    if (box.empty() || mono_buf_ == nullptr) return;
++    const uint16_t* fb = canvas_.buffer();
++    for (int page = 0; page < height_ / 8; ++page) {
++        uint8_t* dst = mono_buf_ + page * width_;
++        for (int x = 0; x < width_; ++x) {
++            uint8_t bits = 0;
++            for (int b = 0; b < 8; ++b) {
++                if (luma565(fb[(size_t)(page * 8 + b) * width_ + x]) > EYES_MONO_THRESHOLD) {
++                    bits |= 1 << b;
++                }
++            }
++            dst[x] = bits;
++        }
++    }
++    esp_lcd_panel_draw_bitmap(panel_, 0, 0, width_, height_, mono_buf_);
++#else
 +    if (box.empty() || dma_buf_[0] == nullptr || dma_buf_[1] == nullptr) return;
 +    const uint16_t* fb = canvas_.buffer();
 +    int w = box.x1 - box.x0 + 1;
@@ -1722,6 +1823,7 @@ index 0000000..361a2a4
 +            xSemaphoreGive(dma_free_);  // no transfer queued, no callback will come
 +        }
 +    }
++#endif
 +}
 +
 +void EyesDisplay::RenderLoop() {
@@ -1760,10 +1862,10 @@ index 0000000..361a2a4
 +}
 diff --git a/main/boards/esp32s3-weact-nhi/eyes_display.h b/main/boards/esp32s3-weact-nhi/eyes_display.h
 new file mode 100644
-index 0000000..6f5a5aa
+index 0000000..d65b823
 --- /dev/null
 +++ b/main/boards/esp32s3-weact-nhi/eyes_display.h
-@@ -0,0 +1,167 @@
+@@ -0,0 +1,171 @@
 +// EyesDisplay: replaces the stock LVGL chat UI with animated RoboEyes on an
 +// SPI RGB565 panel. Rendering runs in its own low-priority task.
 +// On top of the eyes it draws small animated overlays (hearts, tears, blush,
@@ -1843,6 +1945,8 @@ index 0000000..6f5a5aa
 +    void LookAt(unsigned char position);  // one of roboeyes N/NE/E/... DEFAULT
 +    void Blink();
 +    void Wink();
++    // Panel missing: keep animating (behaviour, logs) but never touch the bus.
++    void DisableOutput() { output_enabled_ = false; }
 +    void SetEmotionHook(EmotionHook hook) { emotion_hook_ = std::move(hook); }
 +    void SetChatHook(ChatHook hook) { chat_hook_ = std::move(hook); }
 +
@@ -1902,6 +2006,8 @@ index 0000000..6f5a5aa
 +    SemaphoreHandle_t dma_free_ = nullptr;   // counting: free push buffers
 +    uint16_t* dma_buf_[2] = {nullptr, nullptr};
 +    int dma_next_ = 0;
++    uint8_t* mono_buf_ = nullptr;            // OLED: 1 bpp, SSD1306 page order
++    volatile bool output_enabled_ = true;
 +    TaskHandle_t task_ = nullptr;
 +
 +    // Subtitle (text is laid out once per change, not every frame)
@@ -2932,10 +3038,10 @@ index 0000000..e5b056f
 +};
 diff --git a/main/boards/esp32s3-weact-nhi/nhi_config.h b/main/boards/esp32s3-weact-nhi/nhi_config.h
 new file mode 100644
-index 0000000..6789e8a
+index 0000000..1476f3a
 --- /dev/null
 +++ b/main/boards/esp32s3-weact-nhi/nhi_config.h
-@@ -0,0 +1,128 @@
+@@ -0,0 +1,156 @@
 +// Tunable constants for the eyes, the head servos and the behaviour.
 +// No magic numbers elsewhere.
 +#pragma once
@@ -2979,10 +3085,37 @@ index 0000000..6789e8a
 +
 +#define EYES_COLOR_FADE_STEP  24      // 0..256 per frame (24 ~ 10 frames to fade)
 +
-+#define EYES_FPS              30      // target frame rate (25..30)
 +#define EYES_TASK_PRIORITY    2       // low: must never starve audio
 +#define EYES_TASK_STACK       4096
 +#define EYES_TASK_CORE        1       // tskNO_AFFINITY is also fine
++
++#if NHI_HW_OLED
++// ---- 128x64 monochrome OLED ----
++// The frame is drawn in RGB565 like on the TFT, then thresholded to 1 bit:
++// a pixel lights up when its brightness is above EYES_MONO_THRESHOLD (0..255).
++#define EYES_MONO             1
++#define EYES_MONO_THRESHOLD   40      // dark lenses of the sunglasses stay off
++#define EYES_FPS              20      // a full 1 KB frame over I2C @ 400 kHz ~ 25 ms
++#define EYES_FX_PCT           40      // overlay sizes (hearts, "?", Zzz...) vs. the 320x240 TFT
++#define EYES_SHOW_CHAT        0       // no room for chat text: eyes only (system messages still shown)
++
++#define EYES_WIDTH            36
++#define EYES_HEIGHT           36
++#define EYES_RADIUS           8
++#define EYES_SPACE            12
++#define EYES_WIDE_WIDTH       40
++#define EYES_WIDE_HEIGHT      46
++#define EYES_SQUINT_HEIGHT    18
++#define EYES_SWEAT_SCALE      1.0f
++#define EYES_PUSH_LINES       8       // unused on the OLED
++#define EYES_TEXT_SCALE       1
++#define EYES_TEXT_MAX_LINES   2
++#else
++// ---- 320x240 TFT ----
++#define EYES_MONO             0
++#define EYES_FPS              30      // target frame rate (25..30)
++#define EYES_FX_PCT           100
++#define EYES_SHOW_CHAT        1
 +
 +#define EYES_WIDTH            90
 +#define EYES_HEIGHT           80
@@ -3002,6 +3135,7 @@ index 0000000..6789e8a
 +// Bottom subtitle strip (ASCII + Vietnamese 8x16 font, scaled)
 +#define EYES_TEXT_SCALE       2
 +#define EYES_TEXT_MAX_LINES   2
++#endif
 +// How long an assistant sentence stays on screen
 +#define EYES_CHAT_TEXT_MS     6000
 +
@@ -4189,14 +4323,16 @@ index 0000000..3229e8b
 +print("};")
 diff --git a/main/boards/esp32s3-weact-nhi/weact_nhi_board.cc b/main/boards/esp32s3-weact-nhi/weact_nhi_board.cc
 new file mode 100644
-index 0000000..b919ed6
+index 0000000..c0d992a
 --- /dev/null
 +++ b/main/boards/esp32s3-weact-nhi/weact_nhi_board.cc
-@@ -0,0 +1,273 @@
-+// "Nhi" AI desk robot on a WeAct ESP32-S3 CoreBoard N16R8:
-+// ILI9341 eyes, INMP441 mic + WeAct I2S Speaker (PCM5100A) on one I2S bus.
-+// 2 head servos (PAN 4, TILT 5). Wake word "Chào Nhi" or the BOOT button.
+@@ -0,0 +1,375 @@
++// "Nhi" AI desk robot on an ESP32-S3 N16R8. RoboEyes + 2 head servos (PAN/TILT),
++// wake word "Chào Nhi" or the BOOT button. Hardware variant in board_pins.h:
++//  - NHI_HW_OLED 1: red bread-compact PCB, SSD1306 OLED, INMP441 + MAX98357 (simplex)
++//  - NHI_HW_OLED 0: WeAct CoreBoard, ILI9341 TFT, INMP441 + PCM5100A (one I2S bus)
 +#include <driver/gpio.h>
++#include <driver/i2c_master.h>
 +#include <driver/i2s_std.h>
 +#include <driver/spi_common.h>
 +#include <esp_lcd_ili9341.h>
@@ -4223,6 +4359,7 @@ index 0000000..b919ed6
 +
 +#define TAG "WeactNhiBoard"
 +
++#if !NHI_HW_OLED
 +// INMP441 + PCM5100A share BCLK/WS: one I2S port, TX and RX at the same rate,
 +// 32-bit slots (INMP441 needs 64 BCLK per frame). Unlike NoAudioCodecDuplex the
 +// speaker side sends the mono stream to both slots (PCM5100A L+R outputs).
@@ -4331,6 +4468,7 @@ index 0000000..b919ed6
 +    int mic_slot_ = 0;
 +    int64_t last_log_ms_ = 0;
 +};
++#endif  // !NHI_HW_OLED
 +
 +class WeactNhiBoard : public WifiBoard {
 +private:
@@ -4374,6 +4512,95 @@ index 0000000..b919ed6
 +    }
 +#endif
 +
++#if NHI_HW_OLED
++    // Opens an I2C bus on sda/scl and looks for an SSD1306 at 0x3C or 0x3D.
++    // Returns the address and keeps the bus open, or 0 and deletes the bus.
++    static int ProbeOled(gpio_num_t sda, gpio_num_t scl, i2c_master_bus_handle_t* bus) {
++        i2c_master_bus_config_t bus_config = {};
++        bus_config.i2c_port = (i2c_port_t)0;
++        bus_config.sda_io_num = sda;
++        bus_config.scl_io_num = scl;
++        bus_config.clk_source = I2C_CLK_SRC_DEFAULT;
++        bus_config.glitch_ignore_cnt = 7;
++        bus_config.flags.enable_internal_pullup = 1;
++        if (i2c_new_master_bus(&bus_config, bus) != ESP_OK) return 0;
++        for (int addr : {DISPLAY_I2C_ADDR, 0x3D}) {
++            if (i2c_master_probe(*bus, addr, 20) == ESP_OK) return addr;
++        }
++        i2c_del_master_bus(*bus);
++        *bus = nullptr;
++        return 0;
++    }
++
++    // The silkscreen says SDA 41 / SCL 42; also accept a cable with SDA/SCL swapped.
++    static int FindOled(gpio_num_t* sda, gpio_num_t* scl, i2c_master_bus_handle_t* bus) {
++        *sda = PIN_OLED_SDA;
++        *scl = PIN_OLED_SCL;
++        int addr = ProbeOled(*sda, *scl, bus);
++        if (addr != 0) return addr;
++        addr = ProbeOled(PIN_OLED_SCL, PIN_OLED_SDA, bus);
++        if (addr != 0) {
++            *sda = PIN_OLED_SCL;
++            *scl = PIN_OLED_SDA;
++            ESP_LOGW(TAG, "OLED answers with SDA/SCL swapped (SDA %d / SCL %d)", *sda, *scl);
++        }
++        return addr;
++    }
++
++    void InitializeDisplay() {
++        gpio_num_t sda, scl;
++        i2c_master_bus_handle_t bus = nullptr;
++        int addr = FindOled(&sda, &scl, &bus);
++        if (addr == 0) {
++            ESP_LOGE(TAG, "OLED not found at 0x3C/0x3D on SDA %d / SCL %d: no power (battery "
++                          "switch?) or cable", PIN_OLED_SDA, PIN_OLED_SCL);
++            // Keep a bus on the silkscreen pins so the eyes code still runs (output off).
++            ProbeOled(PIN_OLED_SDA, PIN_OLED_SCL, &bus);
++            if (bus == nullptr) {
++                i2c_master_bus_config_t bus_config = {};
++                bus_config.i2c_port = (i2c_port_t)0;
++                bus_config.sda_io_num = PIN_OLED_SDA;
++                bus_config.scl_io_num = PIN_OLED_SCL;
++                bus_config.clk_source = I2C_CLK_SRC_DEFAULT;
++                bus_config.glitch_ignore_cnt = 7;
++                bus_config.flags.enable_internal_pullup = 1;
++                ESP_ERROR_CHECK(i2c_new_master_bus(&bus_config, &bus));
++            }
++            addr = DISPLAY_I2C_ADDR;
++        }
++
++        esp_lcd_panel_io_handle_t panel_io = nullptr;
++        esp_lcd_panel_io_i2c_config_t io_config = {};
++        io_config.dev_addr = addr;
++        io_config.scl_speed_hz = DISPLAY_I2C_HZ;
++        io_config.control_phase_bytes = 1;
++        io_config.dc_bit_offset = 6;
++        io_config.lcd_cmd_bits = 8;
++        io_config.lcd_param_bits = 8;
++        ESP_ERROR_CHECK(esp_lcd_new_panel_io_i2c(bus, &io_config, &panel_io));
++
++        esp_lcd_panel_handle_t panel = nullptr;
++        esp_lcd_panel_dev_config_t panel_config = {};
++        panel_config.reset_gpio_num = GPIO_NUM_NC;
++        panel_config.bits_per_pixel = 1;
++        esp_lcd_panel_ssd1306_config_t ssd1306_config = {};
++        ssd1306_config.height = DISPLAY_HEIGHT;
++        panel_config.vendor_config = &ssd1306_config;
++        ESP_ERROR_CHECK(esp_lcd_new_panel_ssd1306(panel_io, &panel_config, &panel));
++
++        bool ok = esp_lcd_panel_reset(panel) == ESP_OK && esp_lcd_panel_init(panel) == ESP_OK;
++        if (ok) {
++            esp_lcd_panel_invert_color(panel, false);
++            esp_lcd_panel_mirror(panel, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
++            esp_lcd_panel_disp_on_off(panel, true);
++            ESP_LOGI(TAG, "OLED SSD1306 %dx%d at 0x%02X on SDA %d / SCL %d", DISPLAY_WIDTH,
++                     DISPLAY_HEIGHT, addr, sda, scl);
++        }
++
++        display_ = new EyesDisplay(panel_io, panel, DISPLAY_WIDTH, DISPLAY_HEIGHT);
++        if (!ok) display_->DisableOutput();  // eyes logic keeps running, no I2C spam
++    }
++#else
 +    void InitializeSpi() {
 +        spi_bus_config_t buscfg = {};
 +        buscfg.mosi_io_num = PIN_TFT_MOSI;
@@ -4413,6 +4640,7 @@ index 0000000..b919ed6
 +
 +        display_ = new EyesDisplay(panel_io, panel, DISPLAY_WIDTH, DISPLAY_HEIGHT);
 +    }
++#endif  // NHI_HW_OLED
 +
 +    void InitializeButtons() {
 +        // Push-to-talk: a click toggles listening (upstream behaviour).
@@ -4429,7 +4657,9 @@ index 0000000..b919ed6
 +public:
 +    WeactNhiBoard() : boot_button_(BOOT_BUTTON_GPIO) {
 +        LogResetReason();
++#if !NHI_HW_OLED
 +        InitializeSpi();
++#endif
 +        InitializeDisplay();
 +        InitializeButtons();
 +#ifdef CONFIG_NHI_EYES_DEBUG_CYCLE
@@ -4458,7 +4688,13 @@ index 0000000..b919ed6
 +    }
 +
 +    AudioCodec* GetAudioCodec() override {
++#if NHI_HW_OLED
++        static NoAudioCodecSimplex audio_codec(AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,
++                                               PIN_SPK_BCLK, PIN_SPK_LRC, PIN_SPK_DIN, PIN_MIC_SCK,
++                                               PIN_MIC_WS, PIN_MIC_SD);
++#else
 +        static NhiAudioCodec audio_codec;
++#endif
 +        return &audio_codec;
 +    }
 +

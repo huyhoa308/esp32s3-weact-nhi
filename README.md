@@ -53,16 +53,31 @@ các động tác đầu trong [`head_servos.cc`](firmware/esp32s3-weact-nhi/hea
   <img src="docs/wiring.svg" alt="Sơ đồ đấu nối" width="100%">
 </p>
 
+Firmware hỗ trợ 2 cấu hình phần cứng, chọn bằng `NHI_HW_OLED` trong
+[`board_pins.h`](firmware/esp32s3-weact-nhi/board_pins.h).
+
+**Mặc định – mạch đỏ xiaozhi "bread-compact" (`NHI_HW_OLED 1`)**
+
+| Linh kiện | Chức năng | GPIO |
+|---|---|---|
+| ESP32-S3 N16R8 (clone) | Bộ điều khiển trung tâm, Wi-Fi | – |
+| OLED SSD1306 128×64 (I2C, cổng `OLED-1.3`) | Đôi mắt RoboEyes (đơn sắc) | SDA 41 · SCL 42 |
+| Mic INMP441 | Thu giọng nói | WS 4 · SCK 5 · SD 6 |
+| MAX98357A | Loa | DIN 7 · BCLK 15 · LRC 16 |
+| Servo PAN | Quay trái/phải | 17 |
+| Servo TILT | Cúi/ngẩng | 18 |
+| Nút BOOT | Nói / ngắt lời | 0 |
+| LED RGB WS2812 | Trạng thái | 48 |
+
+**WeAct CoreBoard + TFT (`NHI_HW_OLED 0`, sơ đồ hình trên)**
+
 | Linh kiện | Chức năng | GPIO |
 |---|---|---|
 | WeAct ESP32-S3 N16R8 | Bộ điều khiển trung tâm, Wi-Fi | – |
 | TFT ILI9341 2.4"/2.8" (SPI) | Đôi mắt RoboEyes | SCK 40 · MOSI 41 · CS 39 · DC 38 · RST 47 |
 | Mic INMP441 | Thu giọng nói | SCK 16 · WS 17 · SD 14 |
-| PCM5100A (WeAct I2S Speaker) hoặc MAX98357A | Loa | BCK 16 · WS 17 · DIN 15 |
-| Servo PAN | Quay trái/phải | 4 |
-| Servo TILT | Cúi/ngẩng | 5 |
-| Nút BOOT | Nói / ngắt lời | 0 |
-| LED RGB WS2812 | Trạng thái | 48 |
+| PCM5100A (WeAct I2S Speaker) | Loa | BCK 16 · WS 17 · DIN 15 |
+| Servo PAN / TILT | Quay / cúi | 4 / 5 |
 
 > [!IMPORTANT]
 > - Servo dùng **nguồn 5V riêng ≥ 2A**, nối **GND chung** với ESP32.
