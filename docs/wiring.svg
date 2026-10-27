@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" width="1200" height="700" role="img" aria-label="Nhi wiring diagram">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1026"/>
+      <stop offset="1" stop-color="#1a1240"/>
+    </linearGradient>
+    <pattern id="grid" width="30" height="30" patternUnits="userSpaceOnUse">
+      <path d="M30 0H0V30" fill="none" stroke="#ffffff" stroke-opacity="0.035"/>
+    </pattern>
+  </defs>
+  <style>
+    text { font-family: 'Segoe UI', 'Inter', 'Helvetica Neue', Arial, sans-serif; }
+    .card { fill: #141836; stroke-width: 2; }
+    .h { font-size: 19px; font-weight: 700; fill: #f1f5f9; }
+    .s { font-size: 13px; fill: #94a3b8; }
+    .p { font-size: 15px; fill: #e2e8f0; }
+    .g { font-size: 15px; font-weight: 700; }
+    .w { fill: none; stroke-width: 2.5; stroke-linecap: round; }
+  </style>
+
+  <rect width="1200" height="700" fill="url(#bg)"/>
+  <rect width="1200" height="700" fill="url(#grid)"/>
+  <text x="40" y="52" font-size="28" font-weight="800" fill="#67e8f9">Sơ đồ đấu nối – Robot Nhi</text>
+  <text x="40" y="80" class="s">WeAct ESP32-S3 N16R8 · tất cả GPIO nằm trong firmware/esp32s3-weact-nhi/board_pins.h</text>
+
+  <!-- ===== ESP32-S3 (center) ===== -->
+  <rect x="450" y="130" width="300" height="500" rx="18" fill="#0f2a2f" stroke="#22d3ee" stroke-width="3"/>
+  <rect x="545" y="150" width="110" height="74" rx="8" fill="#1e293b" stroke="#475569"/>
+  <text x="600" y="193" text-anchor="middle" font-size="14" fill="#cbd5e1" font-weight="700">ESP32-S3</text>
+  <text x="600" y="254" text-anchor="middle" class="h">WeAct CoreBoard</text>
+  <text x="600" y="276" text-anchor="middle" class="s">N16R8 · 16 MB Flash · 8 MB PSRAM</text>
+
+  <g class="g" fill="#a78bfa">
+    <text x="468" y="315">GPIO 40</text>
+    <text x="468" y="341">GPIO 41</text>
+    <text x="468" y="367">GPIO 39</text>
+    <text x="468" y="393">GPIO 38</text>
+    <text x="468" y="419">GPIO 47</text>
+  </g>
+  <g class="g" fill="#f472b6">
+    <text x="468" y="571">GPIO 4</text>
+    <text x="468" y="597">GPIO 5</text>
+  </g>
+  <g class="g" fill="#34d399" text-anchor="end">
+    <text x="732" y="315">GPIO 16</text>
+    <text x="732" y="341">GPIO 17</text>
+    <text x="732" y="367">GPIO 14</text>
+    <text x="732" y="393">GPIO 15</text>
+  </g>
+  <g class="g" fill="#fbbf24" text-anchor="end">
+    <text x="732" y="571">GPIO 0</text>
+    <text x="732" y="597">GPIO 48</text>
+  </g>
+
+  <!-- ===== TFT (left top) ===== -->
+  <rect class="card" x="40" y="220" width="300" height="250" rx="14" stroke="#a78bfa"/>
+  <text x="60" y="254" class="h">TFT ILI9341 2.4"/2.8"</text>
+  <text x="60" y="275" class="s">SPI · mắt RoboEyes 320×240</text>
+  <g class="p">
+    <text x="214" y="315" text-anchor="end">SCK</text>
+    <text x="214" y="341" text-anchor="end">SDI / MOSI</text>
+    <text x="214" y="367" text-anchor="end">CS</text>
+    <text x="214" y="393" text-anchor="end">DC / RS</text>
+    <text x="214" y="419" text-anchor="end">RST</text>
+  </g>
+  <text x="60" y="455" class="s">LED + VCC → 3.3V · GND → GND</text>
+  <g class="w" stroke="#a78bfa">
+    <path d="M224 310 H460"/>
+    <path d="M224 336 H460"/>
+    <path d="M224 362 H460"/>
+    <path d="M224 388 H460"/>
+    <path d="M224 414 H460"/>
+  </g>
+
+  <!-- ===== Servos (left bottom) ===== -->
+  <rect class="card" x="40" y="490" width="300" height="170" rx="14" stroke="#f472b6"/>
+  <text x="60" y="522" class="h">2 × Servo 180°</text>
+  <text x="60" y="540" class="s">SG90 / MG90S</text>
+  <g class="p">
+    <text x="214" y="571" text-anchor="end">PAN (trái/phải)</text>
+    <text x="214" y="597" text-anchor="end">TILT (cúi/ngẩng)</text>
+  </g>
+  <text x="60" y="628" class="s">Cam = tín hiệu · Đỏ = 5V riêng ≥ 2A</text>
+  <text x="60" y="646" class="s">Nâu = GND (chung với ESP32)</text>
+  <g class="w" stroke="#f472b6">
+    <path d="M224 566 H460"/>
+    <path d="M224 592 H460"/>
+  </g>
+
+  <!-- ===== Audio (right top) ===== -->
+  <rect class="card" x="860" y="220" width="300" height="250" rx="14" stroke="#34d399"/>
+  <text x="880" y="254" class="h">Âm thanh – 1 bus I2S</text>
+  <text x="880" y="275" class="s">INMP441 + PCM5100A / MAX98357A</text>
+  <g class="p">
+    <text x="986" y="315">SCK · BCK · BCLK</text>
+    <text x="986" y="341">WS · LRC</text>
+    <text x="986" y="367">Mic SD → ESP</text>
+    <text x="986" y="393">ESP → Loa DIN</text>
+  </g>
+  <text x="880" y="430" class="s">Mic: L/R → GND, VDD 3.3V</text>
+  <text x="880" y="450" class="s">PCM5100A: VCC 5V, SD 3.3V, MC GND</text>
+  <g class="w" stroke="#34d399">
+    <path d="M740 310 H976"/>
+    <path d="M740 336 H976"/>
+    <path d="M740 362 H976"/>
+    <path d="M740 388 H976"/>
+  </g>
+
+  <!-- ===== UI (right bottom) ===== -->
+  <rect class="card" x="860" y="490" width="300" height="170" rx="14" stroke="#fbbf24"/>
+  <text x="880" y="522" class="h">Điều khiển</text>
+  <text x="880" y="540" class="s">trên board WeAct</text>
+  <text x="986" y="571" class="p">Nút BOOT · nói</text>
+  <text x="986" y="597" class="p">LED RGB WS2812</text>
+  <text x="880" y="640" class="s">Hoặc gọi: “Chào Nhi”</text>
+  <g class="w" stroke="#fbbf24">
+    <path d="M740 566 H976"/>
+    <path d="M740 592 H976"/>
+  </g>
+</svg>
